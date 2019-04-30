@@ -16,7 +16,7 @@ import Data.List (foldl')
 import Utils
 
 data InnerProductProof = InnerProductProof{
-    h :: Point,
+    h :: [Point],
     lVector :: [Integer],
     rVector :: [Integer],
     lTerms :: [Point],
@@ -28,31 +28,33 @@ run_Proof = do
     let crv = getCurveByName SEC_p256k1
     h <- generateQ crv <$> scalarGenerate crv
     let q = ecc_n $ common_curve crv
-        a = [10,2]
-        b = [5,4]
+        a = [10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2,10,2]
+        b = [5,4,10,2,10,2,10,2,10,2,10,2,10,2,10,2,5,4,10,2,10,2,10,2,10,2,10,2,10,2,10,2]
         z = (a `vectorInner` b) `mod` q
         n = fromIntegral $ length a
         inner = ecInner crv
         commit = foldr1 (pointAdd crv) [pointBaseMul crv z, a `inner` perturbBase crv n, b `inner` perturbH crv h n]
-        x = 3
-        y = 4
-    proof <- generate_inner_product_proof crv h commit a b x y
-    print proof
-    booly <- verify_inner_product n crv h commit proof z x y
+        hs = perturbH crv h n
+        gs = perturbBase crv n
+    proof <- generate_inner_product_proof crv gs hs commit a b
+    -- print proof
+    booly <- verify_inner_product n crv gs hs commit proof z
     print booly
 
     
 
-generate_inner_product_proof :: Curve -> Point -> Point -> [Integer] -> [Integer] -> Integer -> Integer -> IO InnerProductProof
-generate_inner_product_proof crv h commit lVector rVector x y = mk_inner_product_proof crv h commit lVector rVector [] [] x y
+generate_inner_product_proof :: Curve -> [Point] -> [Point] -> Point -> [Integer] -> [Integer] -> IO InnerProductProof
+generate_inner_product_proof crv gs hs commit lVector rVector = mk_inner_product_proof crv gs hs commit lVector rVector [] []
 
 --- Prove  C = aG + bH + <a,b>Q 
 --- In compressed form: C' = a'G' + b'H' + <a',b'>Q = C + x^2L + x(-2)R 
-mk_inner_product_proof :: Curve -> Point -> Point -> [Integer] -> [Integer] -> [Point] -> [Point] -> Integer -> Integer -> IO InnerProductProof
-mk_inner_product_proof _ _ _ [] [] _ _ _ _ = return $ InnerProductProof PointO [] [] [] []
-mk_inner_product_proof crv h commitLR [a] [b] lTerms rTerms x y = return $ InnerProductProof h [a] [b] lTerms rTerms
-mk_inner_product_proof crv h commitLR lVector rVector  lTerms rTerms x y = do
-    mk_inner_product_proof crv h commit' a' b' (lTerm:lTerms) (rTerm:rTerms) x y
+mk_inner_product_proof :: Curve -> [Point] -> [Point] -> Point -> [Integer] -> [Integer] -> [Point] -> [Point] -> IO InnerProductProof
+mk_inner_product_proof _   _   _     _    [] [] _ _ = return $ InnerProductProof [PointO] [] [] [] []
+mk_inner_product_proof crv gs hs commitLR [a] [b] lTerms rTerms = do
+    return $ InnerProductProof hs [a] [b] (reverse lTerms) $ reverse rTerms
+mk_inner_product_proof crv gs hs commitLR lVector rVector  lTerms rTerms = do
+    print gs'
+    mk_inner_product_proof crv gs' hs' commit' a' b' (lTerm:lTerms) (rTerm:rTerms)
     where
         -- Curry some useful functions until i extract curve
         inner = ecInner crv 
@@ -61,10 +63,6 @@ mk_inner_product_proof crv h commitLR lVector rVector  lTerms rTerms x y = do
         q = ecc_n $ common_curve crv
         n = fromIntegral $ length lVector
         n' = n `div` 2
-
-        -- vectors of H's and G's 
-        hs = perturbH crv h n
-        gs = perturbBase crv n
 
         -- Vector Cuts
         (aLo,aHi) = splitAt (fromInteger n') lVector
@@ -83,7 +81,7 @@ mk_inner_product_proof crv h commitLR lVector rVector  lTerms rTerms x y = do
         rTerm = foldr1 (pointAdd crv) [(aHi `inner` gLo), (bLo `inner` hHi),zr]
 
         -- Fiat Shamir x and x inverse
-        -- x = parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commitLR,lTerm,rTerm]
+        x = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commitLR,lTerm,rTerm]) `mod` q
         invX = expFast x (-1) q
 
         -- x^2L && x^(-2)R
@@ -102,33 +100,40 @@ mk_inner_product_proof crv h commitLR lVector rVector  lTerms rTerms x y = do
         z' = (a' `vectorInner` b') `mod` q
         commit' = foldr1 (pointAdd crv) [pointBaseMul crv z',a' `inner` gs',b' `inner` hs'] -- z'Q + a'G' + b'H'
 
-verify_inner_product :: Integer -> Curve -> Point -> Point -> InnerProductProof -> Integer -> Integer -> Integer -> IO Bool
-verify_inner_product n crv h' commitLR ip@InnerProductProof{..} tx x y = do
+verify_inner_product :: Integer -> Curve -> [Point] -> [Point] -> Point -> InnerProductProof -> Integer -> IO Bool
+verify_inner_product n crv gs hs commitLR ip@InnerProductProof{..} tx = do
+    print g'
+    -- print 
     return $ commit' == commitO
     where
-        -- (xs,xsInv,cc) = generate_shamir_xs ip commitLR
         
         inner = ecInner crv
-        g' = mkExponents n crv (perturbBase crv n) x
+        (x,commitO) = foldl' (\(xs,commit) (lTerm,rTerm)  -> 
+                let fshX = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commit,lTerm,rTerm]) `mod` q
+                    commit' = calc_final_commit crv commit [fshX] [lTerm] [rTerm]
+                in (fshX:xs, commit')
+            ) ([],commitLR) (zip lTerms rTerms) 
+        
+        g' = mkExponents n crv gs $ reverse x
         q = ecc_n $ common_curve crv
         
-        hs = perturbH crv h n 
-        h' = mkExponents n crv (reverse hs) x
-        invX = expFast x (-1) q
+        h' = mkExponents n crv (reverse hs) $ reverse x
+        invX = (\xs -> expFast xs (-1) q) <$> x
 
-        aG' = pointMul crv (head lVector) g'
-        bH' = pointMul crv (head rVector) h'
+        -- aG' = pointMul crv (head lVector) $ head g'
+        -- bH' = pointMul crv (head rVector) $ head h'
         tx' = (lVector `vectorInner` rVector) `mod` q
         
-        lTerm = pointMul crv (x*x) $ head lTerms
-        rTerm = pointMul crv (invX * invX) $ head rTerms
+        -- lTerm = pointMul crv (x*x) $ head lTerms
+        -- rTerm = pointMul crv (invX * invX) $ head rTerms
         
         commit' = foldr1 (pointAdd crv) [pointBaseMul crv tx', lVector `inner` [g'],rVector `inner` [h']] -- z'G + a'G' + b'H'
-        commitO = foldr1 (pointAdd crv) [commitLR,lTerm,rTerm] -- (tx)G + lG + rH + x^2L   + x^(-2)R 
+        -- commitO = foldr1 (pointAdd crv) [commitLR,lTerm,rTerm] -- (tx)G + lG + rH + x^2L   + x^(-2)R 
+        -- commitO = calc_final_commit crv commitLR x lTerms rTerms
 
-mkExponents :: Integer -> Curve -> [Point] -> Integer -> Point
-mkExponents n crv [g] _ = g
-mkExponents n crv gs  x = mkExponents n' crv g' x
+mkExponents :: Integer -> Curve -> [Point] -> [Integer] -> Point
+mkExponents n crv [g] [] = g
+mkExponents n crv gs  (x:xs) = mkExponents n' crv g' xs
     where
         n' = fromInteger (n `div` 2)
         (gLo,gHi) = splitAt (fromInteger n') $ take (fromInteger n) gs
@@ -136,7 +141,15 @@ mkExponents n crv gs  x = mkExponents n' crv g' x
         invX = expSafe x (-1) q
         g' = zipWith (pointAdd crv) (pointMul crv x <$> gHi) (pointMul crv invX <$> gLo)
 
-
+calc_final_commit :: Curve -> Point -> [Integer] -> [Point] -> [Point] -> Point
+calc_final_commit _ commitLR _ [] [] =  commitLR
+calc_final_commit crv commitLR (x:xs) (lt:lts) (rt:rts) = calc_final_commit crv commitO xs lts rts
+    where
+        q = ecc_n $ common_curve crv
+        invX = expFast x (-1) q
+        lTerm = pointMul crv (x*x) $ lt
+        rTerm = pointMul crv (invX * invX) $ rt
+        commitO = foldr1 (pointAdd crv) [commitLR,lTerm,rTerm]
 -- generate_shamir_xs :: InnerProductProof -> Point -> ([Integer], [Integer], Point)
 -- generate_shamir_xs InnerProductProof{..} commitLR =
 --     foldl' ( \(xs, xsInv, cc) (left,right) -> 
