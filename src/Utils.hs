@@ -10,8 +10,18 @@ import qualified Data.ByteArray as B
 import qualified Data.ByteArray.Encoding as B
 import qualified Data.ByteString.Char8 as B8
 import Crypto.Hash
+import Crypto.Number.ModArithmetic
 
 type Hash = Digest SHA256
+
+crv :: Curve
+crv = getCurveByName SEC_p256k1
+
+q :: Integer
+q = ecc_n $ common_curve crv
+
+g :: Point
+g = ecc_g $ common_curve crv
 
 (...) = (.) . (.)
 
@@ -27,24 +37,24 @@ type Hash = Digest SHA256
 vectorInner :: (Num a, Integral a) => [a] -> [a] -> a
 vectorInner = (sum ... (.*.))
 
-ecHadamard :: Curve -> [Integer] -> [Point] -> [Point]
-ecHadamard crv xs ys = zipWith (pointMul crv) xs ys 
+ecHadamard :: [Integer] -> [Point] -> [Point]
+ecHadamard xs ys = zipWith (pointMul crv) xs ys 
 
-ecInner :: Curve -> [Integer] -> [Point] -> Point
-ecInner crv xs ps = foldl' (pointAdd crv) PointO $ ecHadamard crv xs ps
+ecInner :: [Integer] -> [Point] -> Point
+ecInner xs ps = foldl' (pointAdd crv) PointO $ ecHadamard xs ps
 
-expVector :: Integer -> Integer -> [Integer]
-expVector n y = (^) y <$> [0..(n-1)]
+vectorPow :: Integer -> Integer -> [Integer]
+vectorPow y n= (\i -> if i == 0 && y == 0 then 0 else expSafe y i q) <$> [0..n-1]
 
-perturbH :: Curve -> Point -> Integer -> [Point]
-perturbH crv p n = flip (pointMul crv) p <$> hindex
+perturbH :: Point -> Integer -> [Point]
+perturbH p n = flip (pointMul crv) p <$> hindex
     where
-        hindex = parseHexHash <$> (perturbPoint (ecc_g $ common_curve crv) <$> [1..(fromInteger n)])
+        hindex = parseHexHash <$> (perturbPoint p <$> [1..(fromInteger n)])
 
-perturbBase :: Curve -> Integer -> [Point]
-perturbBase crv n = pointBaseMul crv <$> gIndex
+perturbBase :: Integer -> [Point]
+perturbBase n = pointBaseMul crv <$> gIndex
     where
-        gIndex = parseHexHash <$> (perturbPoint (ecc_g $ common_curve crv) <$> [1..(fromInteger n)])
+        gIndex = parseHexHash <$> (perturbPoint g <$> [1..(fromInteger n)])
         
 perturbPoint :: Point -> Int -> Hash
 perturbPoint PointO _ = hash $ ("" :: B8.ByteString)
