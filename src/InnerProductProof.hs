@@ -32,33 +32,30 @@ run_Proof = do
         b = [5,4,10,2,10,2,10,2,10,2,10,2,10,2,10,2,5,4,10,2,10,2,10,2,10,2,10,2,10,2,10,2]
         z = (a `vectorInner` b) `mod` q
         n = fromIntegral $ length a
-        inner = ecInner crv
-        commit = foldr1 (pointAdd crv) [pointBaseMul crv z, a `inner` perturbBase crv n, b `inner` perturbH crv h n]
-        hs = perturbH crv h n
-        gs = perturbBase crv n
-    proof <- generate_inner_product_proof crv gs hs commit a b
-    -- print proof
+        commit = foldr1 (pointAdd crv) [pointBaseMul crv z, a `ecInner` perturbBase n, b `ecInner` perturbH h n]
+        hs = perturbH h n
+        gs = perturbBase n
+    proof <- generate_inner_product_proof gs hs commit a b
+    print proof
+    print $ length (lVector proof)
+    print $ length (lTerms proof)
     booly <- verify_inner_product n crv gs hs commit proof z
     print booly
 
     
 
-generate_inner_product_proof :: Curve -> [Point] -> [Point] -> Point -> [Integer] -> [Integer] -> IO InnerProductProof
-generate_inner_product_proof crv gs hs commit lVector rVector = mk_inner_product_proof crv gs hs commit lVector rVector [] []
+generate_inner_product_proof :: [Point] -> [Point] -> Point -> [Integer] -> [Integer] -> IO InnerProductProof
+generate_inner_product_proof gs hs commit lVector rVector = mk_inner_product_proof gs hs commit lVector rVector [] []
 
 --- Prove  C = aG + bH + <a,b>Q 
 --- In compressed form: C' = a'G' + b'H' + <a',b'>Q = C + x^2L + x(-2)R 
-mk_inner_product_proof :: Curve -> [Point] -> [Point] -> Point -> [Integer] -> [Integer] -> [Point] -> [Point] -> IO InnerProductProof
-mk_inner_product_proof _   _   _     _    [] [] _ _ = return $ InnerProductProof [PointO] [] [] [] []
-mk_inner_product_proof crv gs hs commitLR [a] [b] lTerms rTerms = do
+mk_inner_product_proof :: [Point] -> [Point] -> Point -> [Integer] -> [Integer] -> [Point] -> [Point] -> IO InnerProductProof
+mk_inner_product_proof  _   _     _    [] [] _ _ = return $ InnerProductProof [PointO] [] [] [] []
+mk_inner_product_proof gs hs commitLR [a] [b] lTerms rTerms = do
     return $ InnerProductProof hs [a] [b] (reverse lTerms) $ reverse rTerms
-mk_inner_product_proof crv gs hs commitLR lVector rVector  lTerms rTerms = do
-    print gs'
-    mk_inner_product_proof crv gs' hs' commit' a' b' (lTerm:lTerms) (rTerm:rTerms)
+mk_inner_product_proof gs hs commitLR lVector rVector  lTerms rTerms = do
+    mk_inner_product_proof gs' hs' commit' a' b' (lTerm:lTerms) (rTerm:rTerms)
     where
-        -- Curry some useful functions until i extract curve
-        inner = ecInner crv 
-        hadamard = ecHadamard crv
 
         q = ecc_n $ common_curve crv
         n = fromIntegral $ length lVector
@@ -77,8 +74,8 @@ mk_inner_product_proof crv gs hs commitLR lVector rVector  lTerms rTerms = do
         -- Leftover terms from inner product a', b' and <a',b'>
         -- lTerm = L(a') + L(b') + L(<a',b'>)
         -- rTerm = R(a') + R(b') + R(<a',b'>)
-        lTerm = foldr1 (pointAdd crv) [(aLo `inner` gHi),(bHi `inner` hLo),zl]
-        rTerm = foldr1 (pointAdd crv) [(aHi `inner` gLo), (bLo `inner` hHi),zr]
+        lTerm = foldr1 (pointAdd crv) [(aLo `ecInner` gHi),(bHi `ecInner` hLo),zl]
+        rTerm = foldr1 (pointAdd crv) [(aHi `ecInner` gLo), (bLo `ecInner` hHi),zr]
 
         -- Fiat Shamir x and x inverse
         x = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commitLR,lTerm,rTerm]) `mod` q
@@ -98,16 +95,12 @@ mk_inner_product_proof crv gs hs commitLR lVector rVector  lTerms rTerms = do
         
         -- Condensed Inner Product z' = <a',b'> and C' = z'G + a'G' + b'H'
         z' = (a' `vectorInner` b') `mod` q
-        commit' = foldr1 (pointAdd crv) [pointBaseMul crv z',a' `inner` gs',b' `inner` hs'] -- z'Q + a'G' + b'H'
+        commit' = foldr1 (pointAdd crv) [pointBaseMul crv z',a' `ecInner` gs',b' `ecInner` hs'] -- z'Q + a'G' + b'H'
 
 verify_inner_product :: Integer -> Curve -> [Point] -> [Point] -> Point -> InnerProductProof -> Integer -> IO Bool
 verify_inner_product n crv gs hs commitLR ip@InnerProductProof{..} tx = do
-    print g'
-    -- print 
     return $ commit' == commitO
     where
-        
-        inner = ecInner crv
         (x,commitO) = foldl' (\(xs,commit) (lTerm,rTerm)  -> 
                 let fshX = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commit,lTerm,rTerm]) `mod` q
                     commit' = calc_final_commit crv commit [fshX] [lTerm] [rTerm]
@@ -127,7 +120,7 @@ verify_inner_product n crv gs hs commitLR ip@InnerProductProof{..} tx = do
         -- lTerm = pointMul crv (x*x) $ head lTerms
         -- rTerm = pointMul crv (invX * invX) $ head rTerms
         
-        commit' = foldr1 (pointAdd crv) [pointBaseMul crv tx', lVector `inner` [g'],rVector `inner` [h']] -- z'G + a'G' + b'H'
+        commit' = foldr1 (pointAdd crv) [pointBaseMul crv tx', lVector `ecInner` [g'],rVector `ecInner` [h']] -- z'G + a'G' + b'H'
         -- commitO = foldr1 (pointAdd crv) [commitLR,lTerm,rTerm] -- (tx)G + lG + rH + x^2L   + x^(-2)R 
         -- commitO = calc_final_commit crv commitLR x lTerms rTerms
 
