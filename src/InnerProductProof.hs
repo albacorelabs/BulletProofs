@@ -39,7 +39,7 @@ run_Proof = do
     print proof
     print $ length (lVector proof)
     print $ length (lTerms proof)
-    booly <- verify_inner_product n crv gs hs commit proof z
+    booly <- verify_inner_product n gs hs commit proof
     print booly
 
     
@@ -97,8 +97,8 @@ mk_inner_product_proof gs hs commitLR lVector rVector  lTerms rTerms = do
         z' = (a' `vectorInner` b') `mod` q
         commit' = foldr1 (pointAdd crv) [pointBaseMul crv z',a' `ecInner` gs',b' `ecInner` hs'] -- z'Q + a'G' + b'H'
 
-verify_inner_product :: Integer -> Curve -> [Point] -> [Point] -> Point -> InnerProductProof -> Integer -> IO Bool
-verify_inner_product n crv gs hs commitLR ip@InnerProductProof{..} tx = do
+verify_inner_product :: Integer -> [Point] -> [Point] -> Point -> InnerProductProof -> IO Bool
+verify_inner_product n gs hs commitLR ip@InnerProductProof{..} = do
     return $ commit' == commitO
     where
         (x,commitO) = foldl' (\(xs,commit) (lTerm,rTerm)  -> 

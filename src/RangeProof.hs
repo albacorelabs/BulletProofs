@@ -2,6 +2,8 @@
 module RangeProof where
 
 import Utils
+import InnerProductProof
+
 import Crypto.PubKey.ECC.Generate
 import Crypto.PubKey.ECC.Prim
 import Crypto.PubKey.ECC.Generate
@@ -21,8 +23,7 @@ data RangeProof = RangeProof{
     taux :: Integer,
     mu :: Integer,
     tx :: Integer,
-    lx :: [Integer],
-    rx :: [Integer],
+    ipp :: InnerProductProof,
     n :: Integer
 } deriving (Show)
 
@@ -90,12 +91,21 @@ generate_range_proof v vBlind pub rp  = do
         tau = (tau2*x*x + tau1*x + z*z*vBlind) `mod` q
         mu = (alpha + rho*x) `mod` q
 
-    return $ RangeProof commitA commitS commitT1 commitT2 tau mu tx lx rx n
+
+        invY = (\i -> expSafe y (-i) q) <$> [0..(n-1)]
+        hs' = zipWith (pointMul crv) invY hs
+        
+        commit = foldr1 (pointAdd crv) [pointBaseMul crv tx, lx `ecInner` gs, rx `ecInner` hs']
+
+
+    ipp <- generate_inner_product_proof gs hs' commit lx rx
+    return $ RangeProof commitA commitS commitT1 commitT2 tau mu tx ipp n
 
 
 verify_range_proof :: RangeProof -> Point -> Point -> Point -> IO Bool
 verify_range_proof RangeProof{..} commitLR pub rp = do
-    return $ verifiedComm && verifiedAS && verifiedTx
+    ipVerify <- verify_inner_product n gs hs' pNoMu ipp
+    return $ verifiedComm && ipVerify
     where
         y = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commitA,commitS]) `mod` q
         z = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ [pointToByte commitA,pointToByte commitS,i2osp y]) `mod` q
@@ -112,20 +122,16 @@ verify_range_proof RangeProof{..} commitLR pub rp = do
 
 
         -- Check A & S commitments -> A + xS - zG + (z*y^n + z^2*2^n) H' = muH + lG + rH'
+
         invY = (\i -> expSafe y (-i) q) <$> [0..(n-1)]
         gs = perturbBase n 
         hs = perturbH rp n 
         hs' = zipWith (pointMul crv) invY hs
+        pNoMu = foldr1 (pointAdd crv) [pointBaseMul crv tx,pLHS,pointNegate crv $ pointMul crv mu pub]
+
+
         hFactor = (.+.) ((*z) <$> (y `vectorPow` n)) $ ((*) (z*z) <$> (2 `vectorPow` n))
     
         pLHS = foldr1 (pointAdd crv) [commitA, pointMul crv x commitS,         
                pointNegate crv $ ((*z) <$> 1 `vectorPow` n) `ecInner` gs,
                hFactor `ecInner` hs']
-               
-        pRHS = foldr1 (pointAdd crv) [pointMul crv mu pub, lx `ecInner` gs, rx `ecInner` hs']
-
-        verifiedAS = pLHS == pRHS
-
-        -- Check tx = <l,r>
-        tx' = (lx `vectorInner` rx) `mod` q
-        verifiedTx = tx' == tx
