@@ -16,7 +16,7 @@ import Data.List (foldl')
 import Utils
 
 data InnerProductProof = InnerProductProof{
-    h :: [Point],
+    h :: Point,
     lVector :: [Integer],
     rVector :: [Integer],
     lTerms :: [Point],
@@ -32,10 +32,10 @@ run_Proof = do
         b = [5,4,10,2,10,2,10,2,10,2,10,2,10,2,10,2,5,4,10,2,10,2,10,2,10,2,10,2,10,2,10,2]
         z = (a `vectorInner` b) `mod` q
         n = fromIntegral $ length a
-        commit = foldr1 (pointAdd crv) [pointBaseMul crv z, a `ecInner` perturbBase n, b `ecInner` perturbH h n]
+        commit = foldr1 (pointAdd crv) [pointMul crv z h, a `ecInner` perturbBase n, b `ecInner` perturbH h n]
         hs = perturbH h n
         gs = perturbBase n
-    proof <- generate_inner_product_proof gs hs commit a b
+    proof <- generate_inner_product_proof gs hs h commit a b
     print proof
     print $ length (lVector proof)
     print $ length (lTerms proof)
@@ -44,17 +44,18 @@ run_Proof = do
 
     
 
-generate_inner_product_proof :: [Point] -> [Point] -> Point -> [Integer] -> [Integer] -> IO InnerProductProof
-generate_inner_product_proof gs hs commit lVector rVector = mk_inner_product_proof gs hs commit lVector rVector [] []
+generate_inner_product_proof :: [Point] -> [Point] -> Point -> Point -> [Integer] -> [Integer] -> IO InnerProductProof
+generate_inner_product_proof gs hs h commit lVector rVector = mk_inner_product_proof gs hs h commit lVector rVector [] []
 
 --- Prove  C = aG + bH + <a,b>Q 
 --- In compressed form: C' = a'G' + b'H' + <a',b'>Q = C + x^2L + x(-2)R 
-mk_inner_product_proof :: [Point] -> [Point] -> Point -> [Integer] -> [Integer] -> [Point] -> [Point] -> IO InnerProductProof
-mk_inner_product_proof  _   _     _    [] [] _ _ = return $ InnerProductProof [PointO] [] [] [] []
-mk_inner_product_proof gs hs commitLR [a] [b] lTerms rTerms = do
-    return $ InnerProductProof hs [a] [b] (reverse lTerms) $ reverse rTerms
-mk_inner_product_proof gs hs commitLR lVector rVector  lTerms rTerms = do
-    mk_inner_product_proof gs' hs' commit' a' b' (lTerm:lTerms) (rTerm:rTerms)
+mk_inner_product_proof :: [Point] -> [Point] -> Point -> Point -> [Integer] -> [Integer] -> [Point] -> [Point] -> IO InnerProductProof
+mk_inner_product_proof  _   _ _    _    [] [] _ _ = return $ InnerProductProof PointO [] [] [] []
+mk_inner_product_proof gs hs h commitLR [a] [b] lTerms rTerms = do
+    return $ InnerProductProof h [a] [b] (reverse lTerms) $ reverse rTerms
+mk_inner_product_proof gs hs h commitLR lVector rVector  lTerms rTerms = do
+
+    mk_inner_product_proof gs' hs' h commit' a' b' (lTerm:lTerms) (rTerm:rTerms)
     where
 
         q = ecc_n $ common_curve crv
@@ -68,8 +69,8 @@ mk_inner_product_proof gs hs commitLR lVector rVector  lTerms rTerms = do
         (hLo,hHi) = splitAt (fromInteger n') hs
 
         -- L & R components from the inner product z (tx)
-        zl = pointBaseMul crv (aLo `vectorInner` bHi)
-        zr = pointBaseMul crv (aHi `vectorInner` bLo)
+        zl = pointMul crv (aLo `vectorInner` bHi) h 
+        zr = pointMul crv (aHi `vectorInner` bLo) h
 
         -- Leftover terms from inner product a', b' and <a',b'>
         -- lTerm = L(a') + L(b') + L(<a',b'>)
@@ -95,7 +96,7 @@ mk_inner_product_proof gs hs commitLR lVector rVector  lTerms rTerms = do
         
         -- Condensed Inner Product z' = <a',b'> and C' = z'G + a'G' + b'H'
         z' = (a' `vectorInner` b') `mod` q
-        commit' = foldr1 (pointAdd crv) [pointBaseMul crv z',a' `ecInner` gs',b' `ecInner` hs'] -- z'Q + a'G' + b'H'
+        commit' = foldr1 (pointAdd crv) [pointMul crv z' h,a' `ecInner` gs',b' `ecInner` hs'] -- z'Q + a'G' + b'H'
 
 verify_inner_product :: Integer -> [Point] -> [Point] -> Point -> InnerProductProof -> IO Bool
 verify_inner_product n gs hs commitLR ip@InnerProductProof{..} = do
@@ -120,7 +121,7 @@ verify_inner_product n gs hs commitLR ip@InnerProductProof{..} = do
         -- lTerm = pointMul crv (x*x) $ head lTerms
         -- rTerm = pointMul crv (invX * invX) $ head rTerms
         
-        commit' = foldr1 (pointAdd crv) [pointBaseMul crv tx', lVector `ecInner` [g'],rVector `ecInner` [h']] -- z'G + a'G' + b'H'
+        commit' = foldr1 (pointAdd crv) [pointMul crv tx' h, lVector `ecInner` [g'],rVector `ecInner` [h']] -- z'G + a'G' + b'H'
         -- commitO = foldr1 (pointAdd crv) [commitLR,lTerm,rTerm] -- (tx)G + lG + rH + x^2L   + x^(-2)R 
         -- commitO = calc_final_commit crv commitLR x lTerms rTerms
 

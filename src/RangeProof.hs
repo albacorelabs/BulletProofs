@@ -15,6 +15,7 @@ import Crypto.Hash
 import Crypto.Number.Serialize
 import Crypto.Number.ModArithmetic
 
+import Data.ByteString (ByteString)
 data RangeProof = RangeProof{
     commitA :: Point,
     commitS :: Point,
@@ -31,27 +32,28 @@ run_rangeProof :: IO ()
 run_rangeProof = do
     h <- generateQ crv <$> scalarGenerate crv
     rp <- generateQ crv <$> scalarGenerate crv
-    let vBlind = 10
-        v = 8
-        commV = pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))
-    range_proof <- generate_range_proof v vBlind h rp
-    verified <- verify_range_proof range_proof commV h rp
+    let vBlinds = [10,12]
+        vs = [8,9]
+        commVs =  (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> zip vs vBlinds
+    range_proof <- generate_range_proof vs vBlinds h rp
+    verified <- verify_range_proof range_proof commVs h rp
     print verified
 
 
-generate_range_proof :: Int64 -> Integer -> Point -> Point -> IO RangeProof
-generate_range_proof v vBlind pub rp  = do
+generate_range_proof :: [Int64] -> [Integer] -> Point -> Point -> IO RangeProof
+generate_range_proof vs vBlinds pub rp  = do
     -- Setup necessary blinding factors
     alpha <- scalarGenerate crv
     rho   <- scalarGenerate crv
     tau1  <- scalarGenerate crv
     tau2  <- scalarGenerate crv
 
-    let al = [if testBit v i then 1 else 0 | i <- [0.. (finiteBitSize v -1)]]
-        n = fromIntegral $ length al
-        ar = al .-. (1 `vectorPow` n)
-        gs = perturbBase n
-        hs = perturbH rp n
+    let al = foldr1 (++) $ (\v -> [if testBit v i then 1 else 0 | i <- [0.. (finiteBitSize v -1)]]) <$> vs
+        m = fromIntegral $ length vs -- number of range proofs
+        n = fromIntegral $ (fromIntegral  (length al)) `div` m -- length of each range proof
+        ar = al .-. (1 `vectorPow` (n*m))
+        gs = perturbBase (n*m)
+        hs = perturbH rp (n*m)
     sl <- replicate (length al) <$> scalarGenerate crv
     sr <- replicate (length ar) <$> scalarGenerate crv
 
@@ -64,12 +66,14 @@ generate_range_proof v vBlind pub rp  = do
         z = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ [pointToByte commitA,pointToByte commitS,i2osp y]) `mod` q
 
         -- Setup l = (al - z*(1^n)) + sl*X
-        l0 = al .-. ((*z) <$> 1 `vectorPow` n)
+        l0 = al .-. ((*z) <$> 1 `vectorPow` (n*m))
         l1 = sl
 
         -- Setup r = y^n `hadamard` (ar + z*(1^n) + sr*x) + z^2*2^n
-        r0 = ((* (z*z)) <$> (2 `vectorPow` n)) .+. ((y `vectorPow` n) .*. (ar .+. ((*z) <$> (1 `vectorPow` n))))
-        r1 = sr .*. (y `vectorPow` n)
+        cat_terms j = (0 `vectorPow` ((j-1)*n) ++ 2 `vectorPow` n ++ 0 `vectorPow` ((m-j)*n))
+        r0_aggterm = foldr1 (.+.) $ (\j -> (*) (z^(1+j)) <$> cat_terms j) <$> [1..m]
+        r0 = r0_aggterm .+. ((y `vectorPow` (n*m)) .*. (ar .+. ((*z) <$> (1 `vectorPow` (n*m)))))
+        r1 = sr .*. (y `vectorPow` (n*m))
 
         -- Setup t(x) = <l,r> = t0 + t1*x + t2*x^2
         -- Karatsuba -> t2 = l1 * r1 , t1 = l1 * r0 + r1 * l0 , t0 = l0 * r0
@@ -88,23 +92,27 @@ generate_range_proof v vBlind pub rp  = do
         tx = (t0 + t1*x + t2*x*x) `mod` q
 
         -- Setup tau(x) = tau2 *x^2 + tau1*x + z^2*vBlind && mu = alpha + rho*x
-        tau = (tau2*x*x + tau1*x + z*z*vBlind) `mod` q
+        agg_tau0 = sum $ (\(j,vBlind) -> z^(1+j) * vBlind) <$> zip [1..m] vBlinds
+        tau = (tau2*x*x + tau1*x + agg_tau0) `mod` q
         mu = (alpha + rho*x) `mod` q
 
+        x_prot_1 = (parseHexHash $ hashFinalize $ hashUpdates hashInit ([i2osp tau,i2osp mu, i2osp tx ] :: [ByteString])) `mod` q
+        gx = pointBaseMul crv x_prot_1
 
-        invY = (\i -> expSafe y (-i) q) <$> [0..(n-1)]
+        invY = (\i -> expSafe y (-i) q) <$> [0..(m*n-1)]
         hs' = zipWith (pointMul crv) invY hs
         
-        commit = foldr1 (pointAdd crv) [pointBaseMul crv tx, lx `ecInner` gs, rx `ecInner` hs']
+        commit = foldr1 (pointAdd crv) [pointMul crv tx gx, lx `ecInner` gs, rx `ecInner` hs']
 
-
-    ipp <- generate_inner_product_proof gs hs' commit lx rx
+    ipp <- generate_inner_product_proof gs hs' gx commit lx rx
     return $ RangeProof commitA commitS commitT1 commitT2 tau mu tx ipp n
 
 
-verify_range_proof :: RangeProof -> Point -> Point -> Point -> IO Bool
+verify_range_proof :: RangeProof -> [Point] -> Point -> Point -> IO Bool
 verify_range_proof RangeProof{..} commitLR pub rp = do
-    ipVerify <- verify_inner_product n gs hs' pNoMu ipp
+    ipVerify <- verify_inner_product (n*m) gs hs' pNoMu ipp
+    print verifiedComm
+    print ipVerify
     return $ verifiedComm && ipVerify
     where
         y = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commitA,commitS]) `mod` q
@@ -114,24 +122,30 @@ verify_range_proof RangeProof{..} commitLR pub rp = do
 
         -- Check commLR is the commitment to V -> tG + tauxH = z^2*V + deltaG + xT1 + x^2T2
         -- delta = (z- z^2)*(1^n * y^n ) - z^3(1^n * 2^n)
+        m = fromIntegral $ length commitLR
         tG = pointBaseMul crv tx 
         tauxH = pointMul crv taux pub
-        delta = ((z - z*z)*((1 `vectorPow` n) `vectorInner` (y `vectorPow` n)) - ((z*z*z)*(1 `vectorPow` n) `vectorInner` (2 `vectorPow`n) )) `mod` q
-        rhs = foldr1 (pointAdd crv) [pointMul crv (z*z) commitLR, pointBaseMul crv delta,pointMul crv x commitT1, pointMul crv (x*x) commitT2]
+        agg_delta = sum $ (\j -> (*) (z^(j+2)) ( (1 `vectorPow` (n)) `vectorInner` (2 `vectorPow` (n)) )) <$> [1..m]
+        delta = ((z - z*z)*((1 `vectorPow` (n*m)) `vectorInner` (y `vectorPow` (n*m))) - agg_delta) `mod` q
+        rhs = foldr1 (pointAdd crv) [((*) (z*z) <$> (z `vectorPow` m)) `ecInner` commitLR, pointBaseMul crv delta,pointMul crv x commitT1, pointMul crv (x*x) commitT2]
         verifiedComm = rhs == (pointAdd crv tG tauxH)
 
 
         -- Check A & S commitments -> A + xS - zG + (z*y^n + z^2*2^n) H' = muH + lG + rH'
 
-        invY = (\i -> expSafe y (-i) q) <$> [0..(n-1)]
-        gs = perturbBase n 
-        hs = perturbH rp n 
+        invY = (\i -> expSafe y (-i) q) <$> [0..(m*n-1)]
+        gs = perturbBase $ m*n 
+        hs = perturbH rp $ m*n  
         hs' = zipWith (pointMul crv) invY hs
-        pNoMu = foldr1 (pointAdd crv) [pointBaseMul crv tx,pLHS,pointNegate crv $ pointMul crv mu pub]
+        x_prot_1 = (parseHexHash $ hashFinalize $ hashUpdates hashInit ([i2osp taux,i2osp mu, i2osp tx ] :: [ByteString])) `mod` q
+        gx = pointBaseMul crv x_prot_1
+        pNoMu = foldr1 (pointAdd crv) [pointMul crv tx gx,pLHS,pointNegate crv $ pointMul crv mu pub]
 
+        partHs :: Int -> Int -> [Point]
+        partHs n j = drop ((j - 1) * n) $ take (j *n)  hs'
 
-        hFactor = (.+.) ((*z) <$> (y `vectorPow` n)) $ ((*) (z*z) <$> (2 `vectorPow` n))
-    
+        aggFactor = foldr1 (pointAdd crv) $ (\j -> ((*) (z^(j+1)) <$> (2 `vectorPow` n)) `ecInner` (partHs (fromInteger n) (fromInteger j)) ) <$> [1..m]
+
         pLHS = foldr1 (pointAdd crv) [commitA, pointMul crv x commitS,         
-               pointNegate crv $ ((*z) <$> 1 `vectorPow` n) `ecInner` gs,
-               hFactor `ecInner` hs']
+               pointNegate crv $ ((*z) <$> 1 `vectorPow` (n*m)) `ecInner` gs,
+               ((*z) <$> (y `vectorPow` (n*m))) `ecInner` hs', aggFactor]
