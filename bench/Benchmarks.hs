@@ -22,6 +22,6 @@ main = do
     
     defaultMain [
         bgroup "BulletProof Range Proof" [
-            bench "Verifying 64-bit rangeproof" $ nfIO $ curriedVerify range_proof
+            bench "Verifying 64-bit rangeproof" $ nf curriedVerify range_proof
             ]
         ]

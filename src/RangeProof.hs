@@ -36,7 +36,7 @@ run_rangeProof = do
         vs = [8,9]
         commVs =  (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> zip vs vBlinds
     range_proof <- generate_range_proof vs vBlinds h rp
-    verified <- verify_range_proof range_proof commVs h rp
+    let verified = verify_range_proof range_proof commVs h rp
     print verified
 
 
@@ -104,16 +104,12 @@ generate_range_proof vs vBlinds pub rp  = do
         
         commit = foldr1 (pointAdd crv) [pointMul crv tx gx, lx `ecInner` gs, rx `ecInner` hs']
 
-    ipp <- generate_inner_product_proof gs hs' gx commit lx rx
+        ipp = generate_inner_product_proof gs hs' gx commit lx rx
     return $ RangeProof commitA commitS commitT1 commitT2 tau mu tx ipp n
 
 
-verify_range_proof :: RangeProof -> [Point] -> Point -> Point -> IO Bool
-verify_range_proof RangeProof{..} commitLR pub rp = do
-    ipVerify <- verify_inner_product (n*m) gs hs' pNoMu ipp
-    print verifiedComm
-    print ipVerify
-    return $ verifiedComm && ipVerify
+verify_range_proof :: RangeProof -> [Point] -> Point -> Point -> Bool
+verify_range_proof RangeProof{..} commitLR pub rp = verifiedComm && ipVerify
     where
         y = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commitA,commitS]) `mod` q
         z = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ [pointToByte commitA,pointToByte commitS,i2osp y]) `mod` q
@@ -132,15 +128,13 @@ verify_range_proof RangeProof{..} commitLR pub rp = do
 
 
         -- Check A & S commitments -> A + xS - zG + (z*y^n + z^2*2^n) H' = muH + lG + rH'
-
         invY = (\i -> expSafe y (-i) q) <$> [0..(m*n-1)]
         gs = perturbBase $ m*n 
         hs = perturbH rp $ m*n  
         hs' = zipWith (pointMul crv) invY hs
         x_prot_1 = (parseHexHash $ hashFinalize $ hashUpdates hashInit ([i2osp taux,i2osp mu, i2osp tx ] :: [ByteString])) `mod` q
         gx = pointBaseMul crv x_prot_1
-        pNoMu = foldr1 (pointAdd crv) [pointMul crv tx gx,pLHS,pointNegate crv $ pointMul crv mu pub]
-
+        
         partHs :: Int -> Int -> [Point]
         partHs n j = drop ((j - 1) * n) $ take (j *n)  hs'
 
@@ -149,3 +143,6 @@ verify_range_proof RangeProof{..} commitLR pub rp = do
         pLHS = foldr1 (pointAdd crv) [commitA, pointMul crv x commitS,         
                pointNegate crv $ ((*z) <$> 1 `vectorPow` (n*m)) `ecInner` gs,
                ((*z) <$> (y `vectorPow` (n*m))) `ecInner` hs', aggFactor]
+
+        pNoMu = foldr1 (pointAdd crv) [pointMul crv tx gx,pLHS,pointNegate crv $ pointMul crv mu pub]
+        ipVerify = verify_inner_product (n*m) gs hs' pNoMu ipp
