@@ -22,9 +22,9 @@ Bulletproof range proofs are logarithmic-sized. This is achieved through the tra
 
 
 ## Range Proof Usage
-The two main functions are `generate_range_proof` and `verify_range_proof`. The former takes as inputs: an array of 64 bit values (for now, ), their corresponding blinding factors and two randomly generated points used in the commitment and inner-product proof. The result is a proof that each value is between 0 and 2^63-1.
+The two main functions are `generate_range_proof` and `verify_range_proof`. The former takes as inputs: a bitwise upperBound (n), an array of integer values values, their corresponding blinding factors and two randomly generated points used in the commitment and inner-product proof. The result is a proof that each value is between 0 and (2^n)-1.
 
-`verify_range_proof` takes as inputs the range proof outputted from `generate_range_proof`, the summed commitments (of values and their commitments), and the two generated points.
+`verify_range_proof` takes as inputs the range proof outputted from `generate_range_proof`, the array of commitments, and the two generated points.
 
 ```
 import Crypto.PubKey.ECC.Prim
@@ -38,6 +38,7 @@ run_rangeProof = do
     let vBlinds = [10,12]
         vs = [8,9]
         commVs =  (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> zip vs vBlinds
-    range_proof <- generate_range_proof vs vBlinds h rp
+        uB = 8 -- # of Bits vs needs to below
+    range_proof <- generate_range_proof uB vs vBlinds h rp
     let verified = verify_range_proof range_proof commVs h rp
 ```

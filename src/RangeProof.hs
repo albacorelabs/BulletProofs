@@ -35,20 +35,21 @@ run_rangeProof = do
     let vBlinds = [10,12]
         vs = [8,9]
         commVs =  (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> zip vs vBlinds
-    range_proof <- generate_range_proof vs vBlinds h rp
+        uB = 8 -- # of Bits vs needs to below
+    range_proof <- generate_range_proof uB vs vBlinds h rp
     let verified = verify_range_proof range_proof commVs h rp
     print verified
 
 
-generate_range_proof :: [Int64] -> [Integer] -> Point -> Point -> IO RangeProof
-generate_range_proof vs vBlinds pub rp  = do
+generate_range_proof :: Int -> [Integer] -> [Integer] -> Point -> Point -> IO RangeProof
+generate_range_proof upperBound vs vBlinds pub rp  = do
     -- Setup necessary blinding factors
     alpha <- scalarGenerate crv
     rho   <- scalarGenerate crv
     tau1  <- scalarGenerate crv
     tau2  <- scalarGenerate crv
 
-    let al = foldr1 (++) $ (\v -> [if testBit v i then 1 else 0 | i <- [0.. (finiteBitSize v -1)]]) <$> vs
+    let al = foldr1 (++) $ (\v -> [if testBit v i then 1 else 0 | i <- [0.. (upperBound -1)]]) <$> vs
         m = fromIntegral $ length vs -- number of range proofs
         n = fromIntegral $ (fromIntegral  (length al)) `div` m -- length of each range proof
         ar = al .-. (1 `vectorPow` (n*m))

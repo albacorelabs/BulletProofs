@@ -12,20 +12,24 @@ import Test.QuickCheck
 import Test.QuickCheck.Modifiers
 import Test.QuickCheck.Monadic
 import Test.Hspec
+import Test.Hspec.Core.QuickCheck (modifyMaxSuccess)
+
 
 import Control.Monad.IO.Class
 
 spec :: Spec
 spec = do
     describe "Checking correctness of range proof" $ do
-        it "Check proof that value (v) is in the range (0,2^n]" $ do
-            property $ quickCheckWith stdArgs {maxSuccess =10} prop_checkRangeProof
-        it "Check aggregated range proofs" $ do    
-            property $ quickCheckWith stdArgs {maxSuccess =10} prop_checkAggRangeProof
+        modifyMaxSuccess (const 10) $ it "Check proof that value (v) is in the range (0,2^n]" $ do
+            property prop_checkRangeProof
+        modifyMaxSuccess (const 10) $ it "Check aggregated range proofs" $ do    
+            property prop_checkAggRangeProof
+        it "Failing Test range proof for the number 256 with an 8-bit upper limit returns false" $ do
+            run_OOBRangeProof `shouldReturn` False 
 
 
 data VAndVBlinds = VAndVBlinds {
-    vvBlind :: (Int64,Integer)
+    vvBlind :: (Integer,Integer)
 } deriving (Show)
     
 instance Arbitrary Point where
@@ -50,28 +54,34 @@ instance Arbitrary a => Arbitrary (ListPow2 a ) where
         return $ ListPow2 list
   
         
-prop_checkRangeProof ::  Positive Int64 ->  Positive Integer -> Point -> Point -> Property
+prop_checkRangeProof ::  Positive Integer ->  Positive Integer -> Point -> Point -> Property
 prop_checkRangeProof v vBlind h rp  = monadicIO $ do
     let vs = [v]
         vBlinds = [vBlind]
         commV = (\ (v,vBlind) -> pointAdd crv (pointMul crv (getPositive vBlind) h) (pointBaseMul crv (toInteger (getPositive v)))) <$> zip vs vBlinds
-    range_proof <- run $ generate_range_proof (getPositive <$> vs) (getPositive <$> vBlinds) h rp
+        ub = max 8 $ (ceiling . logBase 2.0 . fromIntegral . getPositive) v
+    range_proof <- run $ generate_range_proof ub (getPositive <$> vs) (getPositive <$> vBlinds) h rp
     let verified =  verify_range_proof range_proof commV h rp
     assert $ True == verified
 
--- prop_checkAggRangeProof :: NonEmptyList (Positive Int64) -> NonEmptyList (Positive Integer) -> Point -> Point -> Property
 prop_checkAggRangeProof :: ListPow2 VAndVBlinds -> Point -> Point -> Property
 prop_checkAggRangeProof varr h rp  = monadicIO $ do
     let vvblind = vvBlind <$> unwrapListPow2 varr
         commV = (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> vvblind
         vs = fst <$> vvblind
         vBlinds = snd <$> vvblind
-    range_proof <- run $ generate_range_proof vs vBlinds h rp
+        uB = max 8 $ maximum $ ((ceiling . (logBase 2.0) . fromIntegral) <$> (fst <$> vvblind))
+    range_proof <- run $ generate_range_proof uB vs vBlinds h rp
     let verified =  verify_range_proof range_proof commV h rp
     assert $ True == verified
-
-
--- failingTest :: [Int64] -> [Integer]
--- failingTest v vBlinds
---     v = [9,7,7,6,5,9,6,9,2,10]
---     v = [9,7,7,6,5,9,6,9,2,10]
+ 
+run_OOBRangeProof :: IO Bool
+run_OOBRangeProof = do
+    h <- generateQ crv <$> scalarGenerate crv
+    rp <- generateQ crv <$> scalarGenerate crv
+    let vBlinds = [10,12]
+        vs = [256,9]
+        commVs =  (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> zip vs vBlinds
+        uB = 8 -- # of Bits vs needs to below
+    range_proof <- generate_range_proof uB vs vBlinds h rp
+    return $ verify_range_proof range_proof commVs h rp
