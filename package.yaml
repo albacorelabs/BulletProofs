@@ -24,6 +24,7 @@ dependencies:
 - cryptonite
 - bytestring
 - memory
+- cereal
 
 library:
   source-dirs: src

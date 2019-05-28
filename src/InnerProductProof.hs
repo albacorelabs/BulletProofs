@@ -1,6 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module InnerProductProof where
 
@@ -9,8 +11,9 @@ import Crypto.PubKey.ECC.Generate
 import Crypto.PubKey.ECC.Types
 import Crypto.Number.ModArithmetic
 import Crypto.Hash
-
+import GHC.Generics
 import qualified Data.ByteString.Char8 as B8
+import qualified Data.Serialize as S
 import Data.List (foldl')
 
 import Utils
@@ -21,7 +24,7 @@ data InnerProductProof = InnerProductProof{
     rVector :: [Integer],
     lTerms :: [Point],
     rTerms :: [Point]
-} deriving (Show)
+} deriving (Show,Generic, S.Serialize)
 
 run_Proof :: IO ()
 run_Proof = do

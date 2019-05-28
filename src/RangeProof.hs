@@ -1,4 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 module RangeProof where
 
 import Utils
@@ -16,6 +18,9 @@ import Crypto.Number.Serialize
 import Crypto.Number.ModArithmetic
 
 import Data.ByteString (ByteString)
+import qualified Data.Serialize as S
+import GHC.Generics
+
 data RangeProof = RangeProof{
     commitA :: Point,
     commitS :: Point,
@@ -26,7 +31,7 @@ data RangeProof = RangeProof{
     tx :: Integer,
     ipp :: InnerProductProof,
     n :: Integer
-} deriving (Show)
+} deriving (Show, Generic, S.Serialize)
 
 run_rangeProof :: IO ()
 run_rangeProof = do
