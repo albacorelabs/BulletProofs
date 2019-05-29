@@ -21,6 +21,7 @@ import Crypto.Number.ModArithmetic
 import Data.ByteString (ByteString)
 import qualified Data.Serialize as S
 import GHC.Generics
+import Control.DeepSeq
 
 data RangeProof = RangeProof{
     commitA :: Point,
@@ -47,14 +48,20 @@ run_rangeProof = do
 
 
 generate_range_proof :: Int -> [Integer] -> [Integer] -> Point -> IO RangeProof
-generate_range_proof upperBound vs vBlinds h  = do
+generate_range_proof upperBound vals blinds h  = do
     -- Setup necessary blinding factors
     alpha <- scalarGenerate crv
     rho   <- scalarGenerate crv
     tau1  <- scalarGenerate crv
     tau2  <- scalarGenerate crv
 
-    let al = foldr1 (++) $ (\v -> [if testBit v i then 1 else 0 | i <- [0.. (upperBound -1)]]) <$> vs
+    let missingPow2 = (2 ^ ((ceiling . (logBase 2.0) . fromIntegral) (length vals))) - length vals
+        
+        -- 2 ^ ( (ceiling (logBase 2 $ length vals)) - length vals)
+        padding = replicate missingPow2 0
+        vs = vals ++ padding
+        vBlinds = blinds ++ padding
+        al = foldr1 (++) $ (\v -> [if testBit v i then 1 else 0 | i <- [0.. (upperBound -1)]]) <$> vs
         m = fromIntegral $ length vs -- number of range proofs
         n = fromIntegral $ (fromIntegral  (length al)) `div` m -- length of each range proof
         ar = al .-. (1 `vectorPow` (n*m))
@@ -115,7 +122,7 @@ generate_range_proof upperBound vs vBlinds h  = do
 
 
 verify_range_proof :: RangeProof -> [Point] -> Point -> Bool
-verify_range_proof RangeProof{..} commitLR h = verifiedComm && ipVerify
+verify_range_proof RangeProof{..} commits h = verifiedComm && ipVerify
     where
         y = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ pointToByte <$> [commitA,commitS]) `mod` q
         z = (parseHexHash $ hashFinalize $ hashUpdates hashInit $ [pointToByte commitA,pointToByte commitS,i2osp y]) `mod` q
@@ -124,6 +131,8 @@ verify_range_proof RangeProof{..} commitLR h = verifiedComm && ipVerify
 
         -- Check commLR is the commitment to V -> tG + tauxH = z^2*V + deltaG + xT1 + x^2T2
         -- delta = (z- z^2)*(1^n * y^n ) - z^3(1^n * 2^n)
+        missingPow2 = (2 ^ ((ceiling . (logBase 2.0) . fromIntegral) (length commits))) - length commits
+        commitLR = commits ++ replicate missingPow2 PointO
         m = fromIntegral $ length commitLR
         tG = pointBaseMul crv tx 
         tauxH = pointMul crv taux h
