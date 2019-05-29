@@ -76,7 +76,7 @@ parseHexHash h = toInteger $ parser $ reverse str
     where
         str = show h
         parser []     = 0
-        parser (h:hs) = digitToInt h + 16 * parser hs
+        parser (h:hs) = toInteger (digitToInt h) + 16 * parser hs
         
 pointToByte :: Point -> B8.ByteString
 pointToByte PointO = "" :: B8.ByteString
