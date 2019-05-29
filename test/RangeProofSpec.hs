@@ -35,7 +35,7 @@ data VAndVBlinds = VAndVBlinds {
 instance Arbitrary Point where
     arbitrary = do
         i <- arbitrary 
-        return $ generateQ crv i
+        return $ generateQ crv (i `mod` (ecc_n $ common_curve crv)) 
 
 instance Arbitrary VAndVBlinds where
     arbitrary = do
@@ -54,34 +54,33 @@ instance Arbitrary a => Arbitrary (ListPow2 a ) where
         return $ ListPow2 list
   
         
-prop_checkRangeProof ::  Positive Integer ->  Positive Integer -> Point -> Point -> Property
-prop_checkRangeProof v vBlind h rp  = monadicIO $ do
+prop_checkRangeProof ::  Positive Integer ->  Positive Integer -> Point -> Property
+prop_checkRangeProof v vBlind h  = monadicIO $ do
     let vs = [v]
         vBlinds = [vBlind]
         commV = (\ (v,vBlind) -> pointAdd crv (pointMul crv (getPositive vBlind) h) (pointBaseMul crv (toInteger (getPositive v)))) <$> zip vs vBlinds
         ub = max 8 $ (ceiling . logBase 2.0 . fromIntegral . getPositive) v
-    range_proof <- run $ generate_range_proof ub (getPositive <$> vs) (getPositive <$> vBlinds) h rp
-    let verified =  verify_range_proof range_proof commV h rp
+    range_proof <- run $ generate_range_proof ub (getPositive <$> vs) (getPositive <$> vBlinds) h
+    let verified =  verify_range_proof range_proof commV h
     assert $ True == verified
 
-prop_checkAggRangeProof :: ListPow2 VAndVBlinds -> Point -> Point -> Property
-prop_checkAggRangeProof varr h rp  = monadicIO $ do
+prop_checkAggRangeProof :: ListPow2 VAndVBlinds -> Point -> Property
+prop_checkAggRangeProof varr h  = monadicIO $ do
     let vvblind = vvBlind <$> unwrapListPow2 varr
         commV = (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> vvblind
         vs = fst <$> vvblind
         vBlinds = snd <$> vvblind
         uB = max 8 $ maximum $ ((ceiling . (logBase 2.0) . fromIntegral) <$> (fst <$> vvblind))
-    range_proof <- run $ generate_range_proof uB vs vBlinds h rp
-    let verified =  verify_range_proof range_proof commV h rp
+    range_proof <- run $ generate_range_proof uB vs vBlinds h
+    let verified =  verify_range_proof range_proof commV h
     assert $ True == verified
  
 run_OOBRangeProof :: IO Bool
 run_OOBRangeProof = do
     h <- generateQ crv <$> scalarGenerate crv
-    rp <- generateQ crv <$> scalarGenerate crv
     let vBlinds = [10,12]
         vs = [256,9]
         commVs =  (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> zip vs vBlinds
         uB = 8 -- # of Bits vs needs to below
-    range_proof <- generate_range_proof uB vs vBlinds h rp
-    return $ verify_range_proof range_proof commVs h rp
+    range_proof <- generate_range_proof uB vs vBlinds h
+    return $ verify_range_proof range_proof commVs h
