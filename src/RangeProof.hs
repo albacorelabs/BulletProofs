@@ -21,7 +21,6 @@ import Crypto.Number.ModArithmetic
 import Data.ByteString (ByteString)
 import qualified Data.Serialize as S
 import GHC.Generics
-import Control.DeepSeq
 
 data RangeProof = RangeProof{
     commitA :: Point,
@@ -55,9 +54,7 @@ generate_range_proof upperBound vals blinds h  = do
     tau1  <- scalarGenerate crv
     tau2  <- scalarGenerate crv
 
-    let missingPow2 = (2 ^ ((ceiling . (logBase 2.0) . fromIntegral) (length vals))) - length vals
-        
-        -- 2 ^ ( (ceiling (logBase 2 $ length vals)) - length vals)
+    let missingPow2 = (2 ^ ((ceiling . (logBase 2.0) . fromIntegral) (length vals))) - length vals        
         padding = replicate missingPow2 0
         vs = vals ++ padding
         vBlinds = blinds ++ padding
