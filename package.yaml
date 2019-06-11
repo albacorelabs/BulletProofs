@@ -25,6 +25,7 @@ dependencies:
 - bytestring
 - memory
 - cereal
+- containers
 
 library:
   source-dirs: src

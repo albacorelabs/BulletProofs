@@ -114,6 +114,7 @@ verify_inner_product n gs hs commitLR ip@InnerProductProof{..} = commit' == comm
         tx' = (lVector `vectorInner` rVector) `mod` q
                 
         commit' = foldr1 (pointAdd crv) [pointMul crv tx' h, lVector `ecInner` [g'],rVector `ecInner` [h']] -- z'G + a'G' + b'H'
+        -- commit' = foldr1 (pointAdd crv) [pointMul crv tx' h, lVector `ecInner` [g'],rVector `ecInner` [h']] -- z'G + a'G' + b'H'
 
 mkExponents :: Integer -> Curve -> [Point] -> [Integer] -> Point
 mkExponents n crv [g] [] = g
@@ -134,3 +135,19 @@ calc_final_commit crv commitLR (x:xs) (lt:lts) (rt:rts) = calc_final_commit crv 
         lTerm = pointMul crv (x*x) $ lt
         rTerm = pointMul crv (invX * invX) $ rt
         commitO = foldr1 (pointAdd crv) [commitLR,lTerm,rTerm]
+
+
+-- Implementation for single multi-exponent, waiting on Pippenger's to be done
+unrollGenerator :: Integer -> Integer -> Integer -> [Integer] -> [Point] -> [Point] -> Point
+unrollGenerator n lvect rvect xs gs hs = pointAdd crv (pippenger $ zip ss gs) (pippenger $ zip ss' hs)
+        where
+
+            logN = floor $ logBase 2 (fromIntegral n)
+            ss = (*lvect) <$> ((\i -> product $ (\(x,j) -> expFast x (getB (i-1) j) q) <$> (zip xs [0..logN-1])) <$> [1..n])
+            ss' = (*rvect) <$> ((\i -> product $ (\(x,j) -> expFast x ((-1) * getB (i-1) j) q) <$> (zip xs [0..logN-1])) <$> [1..n])
+
+            getB :: Integer -> Integer -> Integer
+            getB i j 
+                | testBit i (fromIntegral j) = 1
+                | otherwise = (-1)            
+
