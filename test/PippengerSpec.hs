@@ -2,6 +2,7 @@ module PippengerSpec where
 
 import EC_Mult
 import Utils
+import Constants
 
 import Crypto.PubKey.ECC.Prim 
 import Crypto.PubKey.ECC.Types

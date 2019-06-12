@@ -7,6 +7,7 @@ import Test.Hspec
 import Test.Hspec.Core.QuickCheck (modifyMaxSuccess)
 
 import Utils
+import Constants
 import Crypto.PubKey.ECC.Types
 import Crypto.PubKey.ECC.Generate
 

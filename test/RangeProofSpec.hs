@@ -3,6 +3,7 @@ module RangeProofSpec where
 
 import RangeProof
 import Utils
+import Constants
 
 import Crypto.PubKey.ECC.Prim 
 import Crypto.PubKey.ECC.Types
