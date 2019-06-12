@@ -6,6 +6,7 @@ module RangeProof where
 
 import Utils
 import InnerProductProof
+import Constants 
 
 import Crypto.PubKey.ECC.Generate
 import Crypto.PubKey.ECC.Prim

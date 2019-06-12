@@ -15,8 +15,10 @@ import GHC.Generics
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.Serialize as S
 import Data.List (foldl')
+import Data.Bits
 
 import Utils
+import Constants
 
 data InnerProductProof = InnerProductProof{
     h :: Point,
@@ -104,42 +106,24 @@ verify_inner_product n gs hs commitLR ip@InnerProductProof{..} = commit' == comm
                     commit' = calc_final_commit crv commit [fshX] [lTerm] [rTerm]
                 in (fshX:xs, commit')
             ) ([],commitLR) (zip lTerms rTerms) 
-        
-        g' = mkExponents n crv gs $ reverse x
-        q = ecc_n $ common_curve crv
-        
-        h' = mkExponents n crv (reverse hs) $ reverse x
-        invX = (\xs -> expFast xs (-1) q) <$> x
 
         tx' = (lVector `vectorInner` rVector) `mod` q
                 
-        commit' = foldr1 (pointAdd crv) [pointMul crv tx' h, lVector `ecInner` [g'],rVector `ecInner` [h']] -- z'G + a'G' + b'H'
-        -- commit' = foldr1 (pointAdd crv) [pointMul crv tx' h, lVector `ecInner` [g'],rVector `ecInner` [h']] -- z'G + a'G' + b'H'
-
-mkExponents :: Integer -> Curve -> [Point] -> [Integer] -> Point
-mkExponents n crv [g] [] = g
-mkExponents n crv gs  (x:xs) = mkExponents n' crv g' xs
-    where
-        n' = fromInteger (n `div` 2)
-        (gLo,gHi) = splitAt (fromInteger n') $ take (fromInteger n) gs
-        q = ecc_n $ common_curve crv
-        invX = expSafe x (-1) q
-        g' = zipWith (pointAdd crv) (pointMul crv x <$> gHi) (pointMul crv invX <$> gLo)
+        commit' = foldr1 (pointAdd crv) [pointMul crv tx' h, calcFinalGens n (lVector !! 0) (rVector !! 0) x gs hs] 
 
 calc_final_commit :: Curve -> Point -> [Integer] -> [Point] -> [Point] -> Point
 calc_final_commit _ commitLR _ [] [] =  commitLR
 calc_final_commit crv commitLR (x:xs) (lt:lts) (rt:rts) = calc_final_commit crv commitO xs lts rts
     where
-        q = ecc_n $ common_curve crv
         invX = expFast x (-1) q
         lTerm = pointMul crv (x*x) $ lt
         rTerm = pointMul crv (invX * invX) $ rt
         commitO = foldr1 (pointAdd crv) [commitLR,lTerm,rTerm]
 
 
--- Implementation for single multi-exponent, waiting on Pippenger's to be done
-unrollGenerator :: Integer -> Integer -> Integer -> [Integer] -> [Point] -> [Point] -> Point
-unrollGenerator n lvect rvect xs gs hs = pointAdd crv (pippenger $ zip ss gs) (pippenger $ zip ss' hs)
+-- Unroll recursion to directly calculate final generators
+calcFinalGens :: Integer -> Integer -> Integer -> [Integer] -> [Point] -> [Point] -> Point
+calcFinalGens n lvect rvect xs gs hs = pointAdd crv (ss `ecInner` gs) (ss' `ecInner` hs)
         where
 
             logN = floor $ logBase 2 (fromIntegral n)

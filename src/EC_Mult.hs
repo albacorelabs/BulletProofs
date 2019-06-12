@@ -1,11 +1,15 @@
-module EC_Mult where
+module EC_Mult (pippenger) where
 
-import Utils
-
+import Constants
 import Data.Bits
 import qualified Data.Map as Map
 import Crypto.PubKey.ECC.Types
 import Crypto.PubKey.ECC.Prim
+
+-------------------------------------------------------------
+-- Better Elliptic Curve Multiplication using Pippenger's  --
+-------------------------------------------------------------
+
 
 nToRadix :: Integer -> Integer -> [Integer]
 nToRadix i k
@@ -17,7 +21,7 @@ radix2w :: Integer -> Int -> [Integer]
 radix2w num w = signedDigit padded_reg_rep
     where
         reg_rep = nToRadix num radix
-        padding = 43 - length reg_rep
+        padding = 256 - length reg_rep
         padded_reg_rep = reg_rep ++ (replicate padding 0 )
         radix = 2^w 
         signedDigit :: [Integer] -> [Integer]
