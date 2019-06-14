@@ -6,8 +6,7 @@ import RangeProof
 import Crypto.PubKey.ECC.Prim
 import Crypto.PubKey.ECC.Generate
 
-import Utils
-
+import Constants
 
 main :: IO ()
 main = do
