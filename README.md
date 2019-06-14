@@ -13,7 +13,7 @@ Bulletproofs is a non-interactive zero-knowledge proof protocol with logarithmic
 
 [x] Range Proof aggregation
 
-[ ] Optimised Single Multi-Exponentiation
+[x] Optimised Single Multi-Exponentiation (using Pippenger's Algorithm)
 
 [ ] Batch Verification
 
