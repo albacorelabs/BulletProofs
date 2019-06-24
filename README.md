@@ -34,11 +34,10 @@ import Crypto.PubKey.ECC.Types
 run_rangeProof :: IO ()
 run_rangeProof = do
     h <- generateQ crv <$> scalarGenerate crv
-    rp <- generateQ crv <$> scalarGenerate crv
     let vBlinds = [10,12]
         vs = [8,9]
         commVs =  (\ (v,vBlind) -> pointAdd crv (pointMul crv vBlind h) (pointBaseMul crv (toInteger v))) <$> zip vs vBlinds
         uB = 8 -- # of Bits vs needs to below
-    range_proof <- generate_range_proof uB vs vBlinds h rp
-    let verified = verify_range_proof range_proof commVs h rp
+    range_proof <- generate_range_proof uB vs vBlinds h
+    let verified = verify_range_proof range_proof commVs h
 ```
