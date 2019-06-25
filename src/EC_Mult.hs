@@ -63,9 +63,12 @@ pippenger ips
                     | digit !! n > 0 = let b = (digit !! n) -1 in (Map.adjust (pointAdd crv pt) b map): sortIntoBucket (n-1) (digit,pt) mapps
                     | otherwise = let b = ((-1)*(digit !! n)) -1 in ( Map.adjust (pointAdd crv (pointNegate crv pt)) b map) : sortIntoBucket (n-1) (digit,pt) mapps 
 
-
 radix_size_hint :: Int -> Int
-radix_size_hint w = (256 + w -1) `div` w
+radix_size_hint w
+    | w == 6 = (256 + w -1) `div` w
+    | w == 7 = (256 + w -1) `div` w
+    | w == 8 = ((256 + w -1) `div` w) + 1
+    | otherwise = error "Value must be 6,7 or 8"
 
 doubling :: Int -> Point -> Point
 doubling 0 p = p
