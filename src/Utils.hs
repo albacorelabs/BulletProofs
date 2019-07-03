@@ -74,7 +74,9 @@ pointToByte :: Point -> B8.ByteString
 pointToByte PointO = "" :: B8.ByteString
 pointToByte (Point x y) = BA.convert hashedPoint
     where
-        hashedPoint :: Hash = hash <$> B8.pack $ (show x <> show y)
+        hashedPoint :: Hash = hash (xBytes <> yBytes)
+        xBytes = i2osp x :: B8.ByteString
+        yBytes = i2osp y :: B8.ByteString
 
 -- Based on SECP_256k1 Bitcoin Compression --
 compressPoint :: Point -> B.ByteString
