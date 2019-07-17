@@ -10,16 +10,19 @@ import Crypto.PubKey.ECC.Generate (generateQ)
 import Test.QuickCheck
 import Test.QuickCheck.Gen
 import Test.Hspec
+import Test.Hspec.Core.QuickCheck (modifyMaxSuccess)
 
 import Control.Monad.IO.Class
 
 spec :: Spec
 spec = do
     describe "Checking correctness of Pippenger's Algorithm" $ do
-        it "Comparing to basic multiplication" $ do
-            quickCheckWith stdArgs {maxSuccess =100} prop_checkSmallPippenger
-            quickCheckWith stdArgs {maxSuccess =100} prop_checkLargePippenger
-            quickCheckWith stdArgs {maxSuccess =20} prop_checkBigArrPippenger
+        modifyMaxSuccess (const 100) $ it "Check exponentiation on small nums" $ do
+            property prop_checkSmallPippenger
+        modifyMaxSuccess (const 100) $ it "Check exponentiation on big (>2^100) nums" $ do
+            property prop_checkLargePippenger
+        modifyMaxSuccess (const 20) $ it "Check exponentiation on big (>2^100) nums arrays [>500 elems]" $ do
+            property prop_checkBigArrPippenger
 
 
 newtype BigInt = BigInt {getBig :: Integer} deriving (Show)
