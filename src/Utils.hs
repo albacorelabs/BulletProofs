@@ -17,7 +17,7 @@ import Crypto.Number.Serialize
 import qualified Data.Serialize as S
 import Constants
 import EC_Mult
-
+import Data.LargeWord (LargeKey(..),Word256)
 
 instance S.Serialize Point where
     put p = 
@@ -25,6 +25,10 @@ instance S.Serialize Point where
     get = do
         p' <- S.getByteString 33
         return $ decompressPoint crv p'
+
+instance (S.Serialize a , S.Serialize b) => S.Serialize (LargeKey a b) where
+    put (LargeKey lo hi) = S.put hi >> S.put lo
+    get = flip LargeKey <$> S.get <*> S.get
 
 (...) = (.) . (.)
 
@@ -72,18 +76,14 @@ parseHexHash h = toInteger $ parser $ reverse str
         
 pointToByte :: Point -> B8.ByteString
 pointToByte PointO = "" :: B8.ByteString
-pointToByte (Point x y) = BA.convert hashedPoint
-    where
-        hashedPoint :: Hash = hash (xBytes <> yBytes)
-        xBytes = i2osp x :: B8.ByteString
-        yBytes = i2osp y :: B8.ByteString
+pointToByte p = compressPoint p
 
 -- Based on SECP_256k1 Bitcoin Compression --
 compressPoint :: Point -> B.ByteString
 compressPoint PointO = error "O point cannot be compressed"
 compressPoint (Point x y) 
-    | y `mod` 2 == 0 = B.cons (2 :: Word8) $ i2osp x
-    | otherwise      = B.cons (3 :: Word8) $ i2osp x
+    | y `mod` 2 == 0 = B.cons (2 :: Word8) $ S.encode (fromIntegral x :: Word256)
+    | otherwise      = B.cons (3 :: Word8) $ S.encode (fromIntegral x :: Word256)
 
 
 decompressPoint :: Curve -> B.ByteString -> Point

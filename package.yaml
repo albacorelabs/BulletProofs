@@ -26,6 +26,7 @@ dependencies:
 - memory
 - cereal
 - containers
+- largeword
 
 library:
   source-dirs: src
